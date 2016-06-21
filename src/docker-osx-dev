@@ -2,6 +2,20 @@
 #
 # A script for running a productive development environment with Docker
 # on OS X. See https://github.com/brikis98/docker-osx-dev for more info.
+# Usages:
+#  1. Change to Specific Dir and share it 
+#     a. cd /to/dir
+#     b. docker-osx-dir
+#  2. Pass path on command line
+#     a. docker-osx-dev -s /to/dir
+#  3. Using docker-compose
+#     a. cd to your docker-compose.yml dir
+#     b. Add to your docker-compose.yml file
+#        i. volumes:
+#             - /foo:/src
+#     b. docker-osx-dev (This will find your volumes and set them up)
+#     c. docker-compose up -d
+   
 
 set -e
 
@@ -441,18 +455,26 @@ function configure_docker_machine {
   DOCKER_HOST_NAME="$DOCKER_MACHINE_NAME"
   # Support < 0.4.1 and >= 0.5.1
   DOCKER_HOST_USER=$(inspect_docker_machine "{{.Driver.SSHUser}}" || inspect_docker_machine "{{.Driver.Driver.SSHUser}}")
+  echo "DOCKER_HOST_USER "$DOCKER_HOST_USER
   DOCKER_HOST_IP=$(inspect_docker_machine "{{.Driver.IPAddress}}" || inspect_docker_machine "{{.Driver.Driver.IPAddress}}")
+  echo "DOCKER_HOST_IP "$DOCKER_HOST_IP
   # Support both version 0.4.1 (and earlier) and 0.5.0 (and later)
   DOCKER_MACHINE_STORE_PATH=$(inspect_docker_machine "{{.StorePath}}" || inspect_docker_machine "{{.HostOptions.AuthOptions.StorePath}}")
+  echo "DOCKER_MACHINE_STORE_PATH "$DOCKER_MACHINE_STORE_PATH
   DOCKER_MACHINE_DRIVER_NAME=$(inspect_docker_machine "{{.DriverName}}")
+  echo "DOCKER_MACHINE_DRIVER_NAME "$DOCKER_MACHINE_DRIVER_NAME
 
-  DOCKER_HOST_SSH_URL="$DOCKER_HOST_USER@$DOCKER_HOST_IP"
+#  DOCKER_HOST_SSH_URL="$DOCKER_HOST_USER@$DOCKER_HOST_IP"
+    DOCKER_HOST_SSH_URL="$DOCKER_HOST_USER@localhost"
+  echo "SSH HOST URL: "$DOCKER_HOST_SSH_URL
   # 0.5.0 returns StorePath as a root directory /machine
   DOCKER_HOST_SSH_KEY="$DOCKER_MACHINE_STORE_PATH/machines/$DOCKER_MACHINE_NAME/id_rsa"
+  echo "DOCKER_HOST_SSH_KEY "$DOCKER_HOST_SSH_KEY
 
   if [[ ! -f $DOCKER_HOST_SSH_KEY ]]; then
     # 0.4.1 returns StorePath as /machines/dev
     DOCKER_HOST_SSH_KEY="$DOCKER_MACHINE_STORE_PATH/id_rsa"
+	echo "DOCKER_HOST_SSH_KEY "$DOCKER_HOST_SSH_KEY
   fi
 
   if [[ $CURRENT_LOG_LEVEL == "DEBUG" ]]; then
@@ -460,6 +482,7 @@ function configure_docker_machine {
   else
     DOCKER_HOST_SSH_COMMAND="docker-machine ssh $DOCKER_MACHINE_NAME"
   fi
+  echo "DOCKER_HOST_SSH_COMMAND "$DOCKER_HOST_SSH_COMMAND
 }
 
 #
@@ -474,7 +497,8 @@ function init_docker_machine {
     log_info "Initializing docker machine $DOCKER_MACHINE_NAME"
     docker-machine start "$DOCKER_MACHINE_NAME"
   fi
-  eval "$(docker-machine env --shell bash $DOCKER_MACHINE_NAME)"
+  echo $DOCKER_MACHINE_NAME
+  #eval "$(docker-machine env --shell bash $DOCKER_MACHINE_NAME)"
   configure_docker_machine
   if [[ $DOCKER_MACHINE_DRIVER_NAME == "virtualbox" ]]; then
     check_for_shared_folders "$remove_shared_folders"
@@ -486,7 +510,8 @@ function init_docker_machine {
 #
 function is_docker_machine_running {
   log_info "Testing if docker machine is running"
-  local readonly status=$(docker-machine status $DOCKER_MACHINE_NAME 2>&1)
+#  local readonly status=$(docker-machine status $DOCKER_MACHINE_NAME 2>&1)
+  local readonly status=$(docker-machine status 2>&1)
   test "$status" = "Running"
 }
 
@@ -629,6 +654,7 @@ function add_docker_host {
     log_warn "$HOSTS_FILE already contains $DOCKER_HOST_NAME, will not overwrite"
   else
     DOCKER_HOST_IP=${DOCKER_HOST_IP-$(boot2docker ip)}
+	echo "DOCKER_HOST_IP "$DOCKER_HOST_IP
     local readonly host_entry="\n$DOCKER_HOST_IP $DOCKER_HOST_NAME"
 
     log_info "Adding $DOCKER_HOST_NAME entry to $HOSTS_FILE so you can use http://$DOCKER_HOST_NAME URLs for testing"
@@ -805,6 +831,7 @@ function do_rsync {
   if [[ -z "$path_to_sync" ]]; then
     log_error "Internal error: can't sync '$path' because it doesn't seem to be part of any paths configured for syncing: $PATHS_TO_SYNC"
   else
+	  echo "Starting do_rsync"
     local readonly parent_folder=$(dirname "$path_to_sync")
 
     local excludes=()
@@ -815,11 +842,12 @@ function do_rsync {
     read -a includes <<< "$INCLUDES"
     local readonly include_flags="${includes[@]/#/--include }"
 
-    local readonly rsh_flag="--rsh=\"ssh -i $DOCKER_HOST_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\""
+    local readonly rsh_flag="--rsh=\"ssh -p 56148 -i $DOCKER_HOST_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\""
 
     local readonly rsync_cmd="rsync $RSYNC_FLAGS $include_flags $exclude_flags $rsh_flag $path_to_sync $DOCKER_HOST_SSH_URL:$parent_folder 2>&1 | grep -v \"^Warning: Permanently added\""
     log_debug "$rsync_cmd"
 
+    #echo "rsync_cmd "$rsync_cmd
     eval "$rsync_cmd" 2>&1 | log_info
   fi
 }
